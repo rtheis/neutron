@@ -76,7 +76,6 @@ class RouterWithMetering(object):
         self.router = router
         self.ns_name = NS_PREFIX + self.id if conf.use_namespaces else None
         self.iptables_manager = iptables_manager.IptablesManager(
-            state_less=True,
             namespace=self.ns_name,
             binary_name=WRAP_NAME,
             state_less=True,
