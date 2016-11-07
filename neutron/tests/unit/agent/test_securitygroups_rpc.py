@@ -1111,6 +1111,7 @@ class BaseSecurityGroupAgentRpcTestCase(base.BaseTestCase):
     def setUp(self, defer_refresh_firewall=False):
         super(BaseSecurityGroupAgentRpcTestCase, self).setUp()
         set_firewall_driver(FIREWALL_NOOP_DRIVER)
+        ipv6._IS_IPV6_ENABLED = True
         self.agent = sg_rpc.SecurityGroupAgentRpc(
                 context=None, plugin_rpc=mock.Mock(),
                 defer_refresh_firewall=defer_refresh_firewall)
