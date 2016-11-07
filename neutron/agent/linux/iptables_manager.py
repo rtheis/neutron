@@ -121,7 +121,38 @@ class IptablesRule(object):
         return comment_rule('-A %s %s' % (chain, self.rule), self.comment)
 
 
-class IptablesTable(object):
+class IptablesTableBase(object):
+    """A noop version of iptables table."""
+
+    def __init__(self, binary_name=binary_name):
+        return
+
+    def add_chain(self, name, wrap=True):
+        return
+
+    def remove_chain(self, name, wrap=True):
+        return
+
+    def remove_chain_by_tag(self, name, tag, wrap=True):
+        return
+
+    def add_rule(self, chain, rule, wrap=True, top=False, tag=None,
+                 comment=None):
+        return
+
+    def remove_rule(self, chain, rule, wrap=True, top=False, comment=None):
+        return
+
+    def empty_chain(self, chain, wrap=True):
+        return
+
+    def clear_rules_by_tag(self, tag):
+        return
+
+    def clear_rules_by_tag_nowrap(self, tag):
+        return
+
+class IptablesTable(IptablesTableBase):
     """An iptables table."""
 
     def __init__(self, binary_name=binary_name):
@@ -199,6 +230,35 @@ class IptablesTable(object):
         self.rules = [r for r in self.rules
                       if jump_snippet not in r.rule]
 
+    def remove_chain_by_tag(self, name, tag, wrap=True):
+        """Remove named chain.
+
+        This removal "cascades". All rule in the chain are removed, as are
+        all rules in other chains that jump to it.
+
+        If the chain is not found, this is merely logged.
+
+        """
+        name = get_chain_name(name, wrap)
+        chain_set = self._select_chain_set(wrap)
+
+        if name not in chain_set:
+            LOG.debug('Attempted to remove chain %s which does not exist',
+                      name)
+            return
+
+        chain_set.remove(name)
+
+        if not wrap:
+            # non-wrapped chains and rules need to be dealt with specially,
+            # so we keep a list of them to be iterated over in apply()
+            self.remove_chains.add(name)
+
+        if not wrap:
+            self.remove_rules += self.clear_rules_by_tag_nowrap(tag)
+        else:
+            self.clear_rules_by_tag(tag)
+
     def add_rule(self, chain, rule, wrap=True, top=False, tag=None,
                  comment=None):
         """Add a rule to the table.
@@ -269,9 +329,21 @@ class IptablesTable(object):
     def clear_rules_by_tag(self, tag):
         if not tag:
             return
-        rules = [rule for rule in self.rules if rule.tag == tag]
+        self.rules = [rule for rule in self.rules if rule.tag != tag]
+
+    def clear_rules_by_tag_nowrap(self, tag):
+        if not tag:
+            return
+        rules = []
+        rules_removed = []
         for rule in rules:
-            self.rules.remove(rule)
+            if rule.tag == tag:
+                rules_removed.add( rule )
+            else:
+                rules.add( rule )
+
+        self.rules = rules
+        return rules_removed
 
 
 class IptablesManager(object):
@@ -310,7 +382,10 @@ class IptablesManager(object):
         self.wrap_name = binary_name[:16]
 
         self.ipv4 = {'filter': IptablesTable(binary_name=self.wrap_name)}
-        self.ipv6 = {'filter': IptablesTable(binary_name=self.wrap_name)}
+        if self.use_ipv6:
+            self.ipv6 = {'filter': IptablesTable(binary_name=self.wrap_name)}
+        else:
+            self.ipv6 = {'filter': IptablesTableBase(binary_name=self.wrap_name)}
 
         # Add a neutron-filter-top chain. It's intended to be shared
         # among the various neutron components. It sits at the very top
