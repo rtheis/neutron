@@ -302,6 +302,43 @@ class SecurityGroupAgentRpc(object):
                           len(updated_devices))
                 self.refresh_firewall(updated_devices)
 
+    def setup_port_filters_part_1(self, new_devices):
+        # These data structures are cleared here in order to avoid
+        # losing updates occurring during firewall refresh
+        devices_to_refilter = self.devices_to_refilter
+        global_refresh_firewall = self.global_refresh_firewall
+        self.devices_to_refilter = set()
+        self.global_refresh_firewall = False
+        # We must call prepare_devices_filter() after we've grabbed
+        # self.devices_to_refilter since an update for a new port
+        # could arrive while we're processing, and we need to make
+        # sure we don't skip it.  It will get handled the next time.
+        if new_devices:
+            LOG.debug("Preparing device filters for %d new devices",
+                      len(new_devices))
+            self.prepare_devices_filter(new_devices)
+        return devices_to_refilter, global_refresh_firewall
+
+    def setup_port_filters_part_2(self, new_devices, updated_devices,
+                                  devices_to_refilter,
+                                  global_refresh_firewall):
+        # TODO(salv-orlando): Avoid if possible ever performing the global
+        # refresh providing a precise list of devices for which firewall
+        # should be refreshed
+        if global_refresh_firewall:
+            LOG.debug("Refreshing firewall for all filtered devices")
+            self.refresh_firewall()
+        else:
+            self.firewall.security_group_updated('sg_member', [],
+                                                 updated_devices)
+            # If a device is both in new and updated devices
+            # avoid reprocessing it
+            updated_devices = ((updated_devices | devices_to_refilter) -
+                               new_devices)
+            if updated_devices:
+                LOG.debug("Refreshing firewall for %d devices",
+                          len(updated_devices))
+                self.refresh_firewall(updated_devices)
 
 # TODO(armax): for bw compat with external dependencies; to be dropped in M.
 SG_RPC_VERSION = (

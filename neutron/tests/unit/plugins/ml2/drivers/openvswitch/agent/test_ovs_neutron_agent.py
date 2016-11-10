@@ -908,7 +908,13 @@ class TestOvsNeutronAgent(object):
     def _test_process_network_ports(self, port_info):
         failed_devices = {'added': set(), 'removed': set()}
         with mock.patch.object(self.agent.sg_agent,
-                               "setup_port_filters") as setup_port_filters,\
+                               "setup_port_filters_part_1",
+                               return_value=(
+                                   set(),
+                                   False)) as setup_port_filters_part_1,\
+                mock.patch.object(
+                    self.agent.sg_agent,
+                    "setup_port_filters_part_2") as setup_port_filters_part_2,\
                 mock.patch.object(
                     self.agent, "treat_devices_added_or_updated",
                     return_value=(
@@ -924,9 +930,11 @@ class TestOvsNeutronAgent(object):
             self.assertEqual(
                 failed_devices,
                 self.agent.process_network_ports(port_info, False))
-            setup_port_filters.assert_called_once_with(
+            setup_port_filters_part_1.assert_called_once_with(
+                port_info.get('added', set()))
+            setup_port_filters_part_2.assert_called_once_with(
                 port_info.get('added', set()),
-                port_info.get('updated', set()))
+                port_info.get('updated', set()), set(), False)
             devices_added_updated = (port_info.get('added', set()) |
                                      port_info.get('updated', set()))
             if devices_added_updated:
@@ -958,7 +966,13 @@ class TestOvsNeutronAgent(object):
                      'added': set(['eth1'])}
         failed_dev = {'added': set(), 'removed': set()}
         with mock.patch.object(self.agent.sg_agent,
-                               "setup_port_filters") as setup_port_filters,\
+                               "setup_port_filters_part_1",
+                               return_value=(
+                                   set(),
+                                   False)) as setup_port_filters_part_1,\
+                mock.patch.object(
+                    self.agent.sg_agent,
+                    "setup_port_filters_part_2") as setup_port_filters_part_2,\
                 mock.patch.object(
                     self.agent,
                     "treat_devices_added_or_updated",
@@ -970,8 +984,10 @@ class TestOvsNeutronAgent(object):
                 self.agent.process_network_ports(port_info, False))
             device_added_updated.assert_called_once_with(
                 set(['eth1', 'tap1']), False)
-            setup_port_filters.assert_called_once_with(
-                set(), port_info.get('updated', set()))
+            setup_port_filters_part_1.assert_called_once_with(
+                set())
+            setup_port_filters_part_2.assert_called_once_with(
+                set(), port_info.get('updated', set()), set(), False)
 
     def test_report_state(self):
         with mock.patch.object(self.agent.state_rpc,
