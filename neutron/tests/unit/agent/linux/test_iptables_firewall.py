@@ -27,7 +27,6 @@ from neutron.agent.linux import iptables_firewall
 from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
-from neutron.common import ipv6_utils
 from neutron.common import utils
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
@@ -92,8 +91,6 @@ class BaseIptablesFirewallTestCase(base.BaseTestCase):
 
         self.iptables_inst.get_rules_for_table.return_value = (
             RAW_TABLE_OUTPUT.splitlines())
-#NJR
-#        ipv6_utils._IS_IPV6_ENABLED = True
         self.firewall = iptables_firewall.IptablesFirewallDriver()
         self.firewall.iptables = self.iptables_inst
 
@@ -1952,8 +1949,6 @@ class OVSHybridIptablesFirewallTestCase(BaseIptablesFirewallTestCase):
 
     def setUp(self):
         super(OVSHybridIptablesFirewallTestCase, self).setUp()
-# NJR
-#        ipv6_utils._IS_IPV6_ENABLED = true
         self.firewall = iptables_firewall.OVSHybridIptablesFirewallDriver()
         # inital data has 1, 2, and 9 in use, see RAW_TABLE_OUTPUT above.
         self._dev_zone_map = {'61634509-31': 2, '8f46cf18-12': 9,
