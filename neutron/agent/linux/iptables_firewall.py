@@ -219,8 +219,10 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
             port = ports[pname]
             self._setup_chain(port, firewall.INGRESS_DIRECTION)
             self._setup_chain(port, firewall.EGRESS_DIRECTION)
-        self.iptables.ipv4['filter'].add_rule(SG_CHAIN, '-j ACCEPT')
-        self.iptables.ipv6['filter'].add_rule(SG_CHAIN, '-j ACCEPT')
+        self.iptables.ipv4['filter'].add_rule(SG_CHAIN, '-j ACCEPT',
+                                              tag=SG_CHAIN)
+        self.iptables.ipv6['filter'].add_rule(SG_CHAIN, '-j ACCEPT',
+                                              tag=SG_CHAIN)
 
         for port in unfiltered_ports.values():
             self._add_accept_rule_port_sec(port, firewall.INGRESS_DIRECTION)
@@ -267,22 +269,24 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         self.iptables.ipv6['filter'].add_chain(chain_name)
 
     def _remove_raw_chain(self, chain_name):
-        self.iptables.ipv4['raw'].remove_chain(chain_name)
-        self.iptables.ipv6['raw'].remove_chain(chain_name)
+        self.iptables.ipv4['raw'].remove_chain_by_tag(chain_name, chain_name)
+        self.iptables.ipv6['raw'].remove_chain_by_tag(chain_name, chain_name)
 
     def _remove_chain_by_name_v4v6(self, chain_name):
-        self.iptables.ipv4['filter'].remove_chain(chain_name)
-        self.iptables.ipv6['filter'].remove_chain(chain_name)
+        self.iptables.ipv4['filter'].remove_chain_by_tag(chain_name,
+                                                         chain_name)
+        self.iptables.ipv6['filter'].remove_chain_by_tag(chain_name,
+                                                         chain_name)
 
     def _add_rules_to_chain_v4v6(self, chain_name, ipv4_rules, ipv6_rules,
-                                 comment=None):
+                                 comment=None, tag=None):
         for rule in ipv4_rules:
             self.iptables.ipv4['filter'].add_rule(chain_name, rule,
-                                                  comment=comment)
+                                                  comment=comment, tag=tag)
 
         for rule in ipv6_rules:
             self.iptables.ipv6['filter'].add_rule(chain_name, rule,
-                                                  comment=comment)
+                                                  comment=comment, tag=tag)
 
     def _get_device_name(self, port):
         return port['device']
@@ -290,13 +294,15 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
     def _update_port_sec_rules(self, port, direction, add=False):
         # add/remove rules in FORWARD and INPUT chain
         device = self._get_device_name(port)
+        chain_name = self._port_chain_name(port, direction)
 
         jump_rule = ['-m physdev --%s %s --physdev-is-bridged '
                      '-j ACCEPT' % (self.IPTABLES_DIRECTION[direction],
                                     device)]
         if add:
             self._add_rules_to_chain_v4v6(
-                'FORWARD', jump_rule, jump_rule, comment=ic.PORT_SEC_ACCEPT)
+                'FORWARD', jump_rule, jump_rule, comment=ic.PORT_SEC_ACCEPT,
+                tag=chain_name)
         else:
             self._remove_rule_from_chain_v4v6('FORWARD', jump_rule, jump_rule)
 
@@ -306,7 +312,9 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                         device)]
             if add:
                 self._add_rules_to_chain_v4v6('INPUT', jump_rule, jump_rule,
-                                              comment=ic.PORT_SEC_ACCEPT)
+                                              comment=ic.PORT_SEC_ACCEPT,
+                                              tag=chain_name)
+
             else:
                 self._remove_rule_from_chain_v4v6(
                     'INPUT', jump_rule, jump_rule)
@@ -327,7 +335,7 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                  device,
                                  SG_CHAIN)]
         self._add_rules_to_chain_v4v6('FORWARD', jump_rule, jump_rule,
-                                      comment=ic.VM_INT_SG)
+                                      comment=ic.VM_INT_SG, tag=chain_name)
 
         # jump to the chain based on the device
         jump_rule = ['-m physdev --%s %s --physdev-is-bridged '
@@ -335,11 +343,12 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                  device,
                                  chain_name)]
         self._add_rules_to_chain_v4v6(SG_CHAIN, jump_rule, jump_rule,
-                                      comment=ic.SG_TO_VM_SG)
+                                      comment=ic.SG_TO_VM_SG, tag=chain_name)
 
         if direction == firewall.EGRESS_DIRECTION:
             self._add_rules_to_chain_v4v6('INPUT', jump_rule, jump_rule,
-                                          comment=ic.INPUT_TO_SG)
+                                          comment=ic.INPUT_TO_SG,
+                                          tag=chain_name)
 
     def _split_sgr_by_ethertype(self, security_group_rules):
         ipv4_sg_rules = []
@@ -368,14 +377,17 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                     # of the list after the allowed_address_pair rules.
                     table.add_rule(chain_name,
                                    '-m mac --mac-source %s -j RETURN'
-                                   % mac.upper(), comment=ic.PAIR_ALLOW)
+                                   % mac.upper(), comment=ic.PAIR_ALLOW,
+                                   tag=chain_name)
                 else:
                     # we need to convert it into a prefix to match iptables
                     ip = c_utils.ip_to_cidr(ip)
                     table.add_rule(chain_name,
                                    '-s %s -m mac --mac-source %s -j RETURN'
-                                   % (ip, mac.upper()), comment=ic.PAIR_ALLOW)
-            table.add_rule(chain_name, '-j DROP', comment=ic.PAIR_DROP)
+                                   % (ip, mac.upper()), comment=ic.PAIR_ALLOW,
+                                   tag=chain_name)
+            table.add_rule(chain_name, '-j DROP', comment=ic.PAIR_DROP,
+                           tag=chain_name)
             rules.append('-j $%s' % chain_name)
 
     def _build_ipv4v6_mac_ip_list(self, mac, ip_address, mac_ipv4_pairs,
@@ -530,9 +542,10 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         ipv6_iptables_rules += self._convert_sgr_to_iptables_rules(
             ipv6_sg_rules)
         # finally add the rules to the port chain for a given direction
-        self._add_rules_to_chain_v4v6(self._port_chain_name(port, direction),
+        chain_name = self._port_chain_name(port, direction)
+        self._add_rules_to_chain_v4v6(chain_name,
                                       ipv4_iptables_rules,
-                                      ipv6_iptables_rules)
+                                      ipv6_iptables_rules, tag=chain_name)
 
     def _add_fixed_egress_rules(self, port, ipv4_iptables_rules,
                                 ipv6_iptables_rules):
@@ -937,6 +950,8 @@ class OVSHybridIptablesFirewallDriver(IptablesFirewallDriver):
 
     def _add_raw_chain_rules(self, port, direction):
         jump_rule = self._get_jump_rule(port, direction)
+        # Didn't tag rule since 'PREROUTING' chain isn't
+        # owned by IptablesFirewallDriver
         self.iptables.ipv4['raw'].add_rule('PREROUTING', jump_rule)
         self.iptables.ipv6['raw'].add_rule('PREROUTING', jump_rule)
 
