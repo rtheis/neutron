@@ -1657,9 +1657,22 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self._add_port_tag_info(need_binding_devices)
         if security_disabled_ports:
             added_ports -= set(security_disabled_ports)
-        self.sg_agent.setup_port_filters(added_ports,
-                                         port_info.get('updated', set()))
+
+        # The following call was split into two calls so that added_ports
+        # can be bound quicker.
+        #self.sg_agent.setup_port_filters(added_ports,
+        #                                 port_info.get('updated', set()))
+
+        devices_to_refilter, global_refresh_firewall = (
+            self.sg_agent.setup_port_filters_part_1(added_ports))
+
         failed_devices['added'] |= self._bind_devices(need_binding_devices)
+
+        self.sg_agent.setup_port_filters_part_2(added_ports,
+                                                port_info.get('updated',
+                                                              set()),
+                                                devices_to_refilter,
+                                                global_refresh_firewall)
 
         if 'removed' in port_info and port_info['removed']:
             start = time.time()
