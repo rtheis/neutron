@@ -15,6 +15,7 @@ import eventlet
 
 from oslo_log import log
 
+from neutron.common import rpc as n_rpc
 from neutron.i18n import _LI
 from neutron import server
 from neutron import service
@@ -24,6 +25,8 @@ LOG = log.getLogger(__name__)
 
 def _eventlet_wsgi_server():
     pool = eventlet.GreenPool()
+
+    n_rpc.delay_incoming_rpc()
 
     neutron_api = service.serve_wsgi(service.NeutronApiService)
     api_thread = pool.spawn(neutron_api.wait)

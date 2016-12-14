@@ -15,6 +15,7 @@
 #    under the License.
 
 import collections
+import os
 import random
 import time
 
@@ -58,6 +59,17 @@ TRANSPORT_ALIASES = {
 # true if the RPC server is not running in the current process space. This
 # will prevent get_connection from creating connections to the AMQP server
 RPC_DISABLED = False
+
+
+# NOTE(rtheis): Delay all incoming RPC requests. This is used during neutron
+# server startup to ensure all forking is done before processing incoming
+# RPC requests to avoid "Process forked after connection established!" errors.
+DELAY_INCOMING_RPC = None
+
+
+def delay_incoming_rpc():
+    global DELAY_INCOMING_RPC
+    DELAY_INCOMING_RPC = time.time()
 
 
 def init(conf):
@@ -207,6 +219,15 @@ class RequestContextSerializer(om_serializer.Serializer):
         return ctxt.to_dict()
 
     def deserialize_context(self, ctxt):
+        global DELAY_INCOMING_RPC
+        # Delay all incoming RPC requests for the first 60 seconds.
+        if DELAY_INCOMING_RPC:
+            if (time.time() - DELAY_INCOMING_RPC) > 60:
+                LOG.debug("Delaying incoming RPC not required for pid " + str(os.getpid()))
+                DELAY_INCOMING_RPC = None
+            else:
+                LOG.debug("Delaying incoming RPC 10 seconds for pid " + str(os.getpid()))
+                time.sleep(10)
         rpc_ctxt_dict = ctxt.copy()
         user_id = rpc_ctxt_dict.pop('user_id', None)
         if not user_id:
